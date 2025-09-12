@@ -1196,8 +1196,35 @@
 
         // Перехват кликов по торрентам
         interceptTorrentClicks: function() {
-            // Перехватываем события кликов в Lampa
-            $(document).on('click', '.torrent-item, .files__item, .online__item', function(e) {
+        // Перехватываем события Lampa для торрентов
+        if (window.Lampa && window.Lampa.Listener) {
+            console.log('[Lampa Integration] Подключаемся к событиям Lampa');
+            
+            window.Lampa.Listener.follow('torrent', function(e) {
+                if (e.type === 'onenter') {
+                    console.log('[Lampa Integration] Перехвачен onenter торрента:', e.element);
+                    
+                    var torrentData = LampaIntegration.extractTorrentDataFromElement(e.element);
+                    
+                    if (torrentData && torrentData.magnet) {
+                        // Показываем диалог выбора
+                        PreloadUI.showChoiceDialog(torrentData, function(action) {
+                            if (action === 'preload') {
+                                LampaIntegration.handlePreloadChoice(torrentData);
+                            } else if (action === 'watch') {
+                                LampaIntegration.handleWatchChoice(torrentData);
+                            }
+                        });
+                        
+                        return false; // Предотвращаем стандартное поведение
+                    }
+                }
+            });
+        } else {
+            console.warn('[Lampa Integration] Lampa.Listener недоступен, пытаемся перехватить клики');
+            
+            // Fallback для старых версий
+            $(document).on('click', '.torrent-item', function(e) {
                 var $this = $(this);
                 var torrentData = LampaIntegration.extractTorrentData($this);
                 
@@ -1205,9 +1232,6 @@
                     e.preventDefault();
                     e.stopPropagation();
                     
-                    console.log('[Lampa Integration] Перехвачен клик по торренту:', torrentData.title);
-                    
-                    // Показываем диалог выбора
                     PreloadUI.showChoiceDialog(torrentData, function(action) {
                         if (action === 'preload') {
                             LampaIntegration.handlePreloadChoice(torrentData);
@@ -1219,9 +1243,32 @@
                     return false;
                 }
             });
+        }
         },
 
-        // Извлечение данных торрента из элемента
+        // Извлечение данных торрента из элемента Lampa (новый API)
+        extractTorrentDataFromElement: function(element) {
+            try {
+                if (element && element.MagnetUri) {
+                    return {
+                        title: element.Title || element.title || 'Неизвестный торрент',
+                        magnet: element.MagnetUri,
+                        quality: LampaIntegration.detectQuality(element.Title || element.title),
+                        size: element.Size || null,
+                        seeds: element.Seeders || 0,
+                        peers: element.Peers || 0,
+                        tracker: element.Tracker || ''
+                    };
+                }
+                
+                return null;
+            } catch (e) {
+                console.warn('[Lampa Integration] Ошибка извлечения данных из элемента Lampa:', e);
+                return null;
+            }
+        },
+
+        // Извлечение данных торрента из элемента DOM (fallback)
         extractTorrentData: function($element) {
             try {
                 // Пытаемся найти данные в разных местах

@@ -1,0 +1,47 @@
+{
+  "name": "TorrServe Smart Preload",
+  "version": "1.0.0",
+  "author": "TorrServe Team",
+  "description": "Умная предзагрузка торрентов для плавного просмотра 4K контента. Автоматически рассчитывает оптимальный размер предзагрузки на основе скорости интернета.",
+  "url": "torrserve-smart-preload.js",
+  "icon": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjAiIGZpbGw9IiNmZjZiMzUiLz4KPHN2ZyB4PSIxMiIgeT0iMTIiIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHA7eCBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1kb3dubG9hZCIgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZmZmZiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPgo8cGF0aCBkPSJNMjEgMTV2NGEyIDIgMCAwIDEtMiAySDVhMiAyIDAgMCAxLTItMnYtNCIvPgo8cG9seWxpbmUgcG9pbnRzPSI3LDEwIDEyLDE1IDE3LDEwIi8+CjxsaW5lIHgxPSIxMiIgeDI9IjEyIiB5MT0iMTUiIHkyPSIzIi8+Cjwvc3ZnPgo8L3N2Zz4K",
+  "tags": ["TorrServe", "Предзагрузка", "4K", "Стриминг"],
+  "minLampaVersion": "1.0.0",
+  "permissions": ["network", "storage"],
+  "settings": {
+    "torrserve_host": {
+      "type": "string",
+      "default": "http://192.168.1.100:8090",
+      "title": "Адрес TorrServe",
+      "description": "IP адрес и порт TorrServe сервера"
+    },
+    "auto_calculate": {
+      "type": "boolean",
+      "default": true,
+      "title": "Автоматический расчет",
+      "description": "Включить умное вычисление размера предзагрузки"
+    },
+    "default_percent": {
+      "type": "number",
+      "default": 50,
+      "min": 10,
+      "max": 90,
+      "title": "Процент по умолчанию",
+      "description": "Размер предзагрузки по умолчанию (%)"
+    },
+    "preload_timeout": {
+      "type": "number",
+      "default": 30,
+      "min": 5,
+      "max": 120,
+      "title": "Таймаут (мин)",
+      "description": "Максимальное время ожидания предзагрузки"
+    },
+    "show_notifications": {
+      "type": "boolean",
+      "default": true,
+      "title": "Уведомления",
+      "description": "Показывать уведомления о статусе предзагрузки"
+    }
+  }
+}

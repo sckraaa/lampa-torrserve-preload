@@ -132,10 +132,46 @@
     // UI компоненты
     var PreloadUI = {
         
-        // Показать диалог выбора: Предзагрузка или Просмотр
+        // Показать диалог выбора: Предзагрузка или Просмотр (совместимый с пультом ДУ)
         showChoiceDialog: function(torrent, callback) {
             console.log('[PreloadUI] Показываем диалог выбора для:', torrent.title);
 
+            // Используем систему Select от Lampa для совместимости с пультом ДУ
+            if (window.Lampa && window.Lampa.Select) {
+                var items = [
+                    {
+                        title: '⏳ Умная предзагрузка',
+                        subtitle: 'AI рассчитает оптимальный размер для плавного 4K',
+                        action: 'preload'
+                    },
+                    {
+                        title: '▶️ Смотреть сейчас',
+                        subtitle: 'Начать просмотр с обычной предзагрузкой',
+                        action: 'watch'
+                    }
+                ];
+
+                window.Lampa.Select.show({
+                    title: '🎬 ' + (torrent.file_title || torrent.title || 'Торрент'),
+                    items: items,
+                    onBack: function() {
+                        // При отмене ничего не делаем, возвращаемся к списку файлов
+                        if (window.Lampa.Controller) {
+                            window.Lampa.Controller.toggle('modal');
+                        }
+                    },
+                    onSelect: function(item) {
+                        callback(item.action);
+                    }
+                });
+            } else {
+                // Fallback для случаев когда Lampa.Select недоступен
+                PreloadUI.showChoiceDialogFallback(torrent, callback);
+            }
+        },
+
+        // Fallback диалог для старых версий Lampa
+        showChoiceDialogFallback: function(torrent, callback) {
             var dialog = $('<div class="preload-choice-dialog"></div>');
             
             var html = `
@@ -146,13 +182,13 @@
                     </div>
                     
                     <div class="preload-choice-buttons">
-                        <div class="preload-choice-btn preload-btn" data-action="preload">
+                        <div class="preload-choice-btn preload-btn selector" data-action="preload" tabindex="0">
                             <div class="choice-icon">⏳</div>
                             <div class="choice-title">Умная предзагрузка</div>
                             <div class="choice-desc">Загрузить часть фильма для плавного просмотра 4K</div>
                         </div>
                         
-                        <div class="preload-choice-btn watch-btn" data-action="watch">
+                        <div class="preload-choice-btn watch-btn selector" data-action="watch" tabindex="0">
                             <div class="choice-icon">▶️</div>
                             <div class="choice-title">Смотреть сейчас</div>
                             <div class="choice-desc">Начать просмотр немедленно</div>
@@ -167,7 +203,7 @@
             
             dialog.html(html);
             
-            // Стили
+            // Стили с поддержкой фокуса для пульта ДУ
             var styles = `
                 <style>
                 .preload-choice-dialog {
@@ -213,16 +249,20 @@
                     cursor: pointer;
                     transition: all 0.3s ease;
                     border: 2px solid transparent;
+                    outline: none;
                 }
-                .preload-choice-btn:hover {
+                .preload-choice-btn:hover,
+                .preload-choice-btn:focus {
                     background: #3a3a3a;
                     border-color: #0078d4;
                     transform: translateY(-2px);
                 }
-                .preload-choice-btn.preload-btn:hover {
+                .preload-choice-btn.preload-btn:hover,
+                .preload-choice-btn.preload-btn:focus {
                     border-color: #ff6b35;
                 }
-                .preload-choice-btn.watch-btn:hover {
+                .preload-choice-btn.watch-btn:hover,
+                .preload-choice-btn.watch-btn:focus {
                     border-color: #4CAF50;
                 }
                 .choice-icon {
@@ -253,17 +293,31 @@
             $('head').append(styles);
             $('body').append(dialog);
             
+            // Фокус на первую кнопку
+            dialog.find('.preload-choice-btn').first().focus();
+            
             // Обработчики событий
-            dialog.find('.preload-choice-btn').on('click', function(e) {
-                e.preventDefault();
-                var action = $(this).data('action');
-                dialog.remove();
-                callback(action);
+            dialog.find('.preload-choice-btn').on('click keydown', function(e) {
+                if (e.type === 'click' || (e.type === 'keydown' && e.keyCode === 13)) { // Enter
+                    e.preventDefault();
+                    var action = $(this).data('action');
+                    dialog.remove();
+                    callback(action);
+                    return false;
+                }
             });
             
-            // Закрытие по ESC или клику вне диалога
+            // Навигация пультом ДУ
             $(document).on('keydown.preload-choice', function(e) {
-                if (e.keyCode === 27) { // ESC
+                var $focused = dialog.find('.preload-choice-btn:focus');
+                
+                if (e.keyCode === 37 || e.keyCode === 39) { // Left/Right
+                    e.preventDefault();
+                    var $buttons = dialog.find('.preload-choice-btn');
+                    var index = $buttons.index($focused);
+                    var nextIndex = e.keyCode === 37 ? 0 : 1; // Left = preload, Right = watch
+                    $buttons.eq(nextIndex).focus();
+                } else if (e.keyCode === 27) { // ESC
                     dialog.remove();
                     $(document).off('keydown.preload-choice');
                 }
@@ -272,6 +326,7 @@
             dialog.on('click', function(e) {
                 if (e.target === dialog[0]) {
                     dialog.remove();
+                    $(document).off('keydown.preload-choice');
                 }
             });
         },
@@ -1203,6 +1258,48 @@
             // Сохраняем ссылку на торрент при его выборе
             var currentTorrentData = null;
             
+            // Сохраняем оригинальную функцию Player.play СРАЗУ при инициализации
+            if (window.Lampa && window.Lampa.Player && window.Lampa.Player.play) {
+                LampaIntegration.originalPlayerPlay = window.Lampa.Player.play;
+                
+                // Переопределяем Player.play НАВСЕГДА для перехвата всех вызовов
+                window.Lampa.Player.play = function(element) {
+                    console.log('[Lampa Integration] Перехвачен Player.play');
+                    
+                    // Если есть активные данные торрента, показываем диалог
+                    if (currentTorrentData && element && element.url) {
+                        console.log('[Lampa Integration] Показываем диалог выбора');
+                        
+                        var fileData = {
+                            ...currentTorrentData,
+                            file_url: element.url,
+                            file_title: element.title,
+                            file_size: element.size || null,
+                            timeline: element.timeline || null,
+                            element: element
+                        };
+                        
+                        // Показываем диалог выбора
+                        PreloadUI.showChoiceDialog(fileData, function(action) {
+                            if (action === 'preload') {
+                                LampaIntegration.handlePreloadChoice(fileData);
+                            } else if (action === 'watch') {
+                                LampaIntegration.handleWatchChoice(fileData, element);
+                            }
+                        });
+                        
+                        // Сбрасываем данные торрента после использования
+                        currentTorrentData = null;
+                    } else {
+                        // Если нет активных данных, используем стандартное поведение
+                        console.log('[Lampa Integration] Стандартное воспроизведение (нет данных торрента)');
+                        if (LampaIntegration.originalPlayerPlay) {
+                            LampaIntegration.originalPlayerPlay.call(this, element);
+                        }
+                    }
+                };
+            }
+            
             window.Lampa.Listener.follow('torrent', function(e) {
                 if (e.type === 'onenter') {
                     console.log('[Lampa Integration] Сохраняем данные торрента:', e.element);
@@ -1210,47 +1307,11 @@
                 }
             });
             
-            // Сохраняем оригинальную функцию Player.play
-            if (window.Lampa && window.Lampa.Player && window.Lampa.Player.play) {
-                LampaIntegration.originalPlayerPlay = window.Lampa.Player.play;
-            }
-            
-            // Перехватываем выбор файла - это правильное место!
-            window.Lampa.Listener.follow('torrent_file', function(e) {
-                if (e.type === 'onenter' && currentTorrentData) {
-                    console.log('[Lampa Integration] Перехвачен выбор файла:', e.element);
-                    
-                    // Обогащаем данные информацией о выбранном файле
-                    var fileData = {
-                        ...currentTorrentData,
-                        file_url: e.element.url,
-                        file_title: e.element.title,
-                        file_size: e.element.size || null,
-                        timeline: e.element.timeline || null,
-                        element: e.element,
-                        item: e.item
-                    };
-                    
-                    // Временно переопределяем Player.play для перехвата
-                    if (window.Lampa && window.Lampa.Player) {
-                        window.Lampa.Player.play = function(element) {
-                            console.log('[Lampa Integration] Перехвачен Player.play, показываем диалог');
-                            
-                            // Восстанавливаем оригинальную функцию
-                            if (LampaIntegration.originalPlayerPlay) {
-                                window.Lampa.Player.play = LampaIntegration.originalPlayerPlay;
-                            }
-                            
-                            // Показываем диалог выбора
-                            PreloadUI.showChoiceDialog(fileData, function(action) {
-                                if (action === 'preload') {
-                                    LampaIntegration.handlePreloadChoice(fileData);
-                                } else if (action === 'watch') {
-                                    LampaIntegration.handleWatchChoice(fileData, element);
-                                }
-                            });
-                        };
-                    }
+            // Очищаем данные торрента при выходе из секции торрентов
+            window.Lampa.Listener.follow('activity', function(e) {
+                if (e.type === 'start' && e.component !== 'torrents') {
+                    console.log('[Lampa Integration] Очищаем данные торрента при смене активности');
+                    currentTorrentData = null;
                 }
             });
         } else {

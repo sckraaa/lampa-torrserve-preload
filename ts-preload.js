@@ -1196,27 +1196,60 @@
 
         // Перехват кликов по торрентам
         interceptTorrentClicks: function() {
-        // Перехватываем события Lampa для торрентов
+        // Перехватываем события Lampa для файлов торрентов
         if (window.Lampa && window.Lampa.Listener) {
             console.log('[Lampa Integration] Подключаемся к событиям Lampa');
             
+            // Сохраняем ссылку на торрент при его выборе
+            var currentTorrentData = null;
+            
             window.Lampa.Listener.follow('torrent', function(e) {
                 if (e.type === 'onenter') {
-                    console.log('[Lampa Integration] Перехвачен onenter торрента:', e.element);
+                    console.log('[Lampa Integration] Сохраняем данные торрента:', e.element);
+                    currentTorrentData = LampaIntegration.extractTorrentDataFromElement(e.element);
+                }
+            });
+            
+            // Сохраняем оригинальную функцию Player.play
+            if (window.Lampa && window.Lampa.Player && window.Lampa.Player.play) {
+                LampaIntegration.originalPlayerPlay = window.Lampa.Player.play;
+            }
+            
+            // Перехватываем выбор файла - это правильное место!
+            window.Lampa.Listener.follow('torrent_file', function(e) {
+                if (e.type === 'onenter' && currentTorrentData) {
+                    console.log('[Lampa Integration] Перехвачен выбор файла:', e.element);
                     
-                    var torrentData = LampaIntegration.extractTorrentDataFromElement(e.element);
+                    // Обогащаем данные информацией о выбранном файле
+                    var fileData = {
+                        ...currentTorrentData,
+                        file_url: e.element.url,
+                        file_title: e.element.title,
+                        file_size: e.element.size || null,
+                        timeline: e.element.timeline || null,
+                        element: e.element,
+                        item: e.item
+                    };
                     
-                    if (torrentData && torrentData.magnet) {
-                        // Показываем диалог выбора
-                        PreloadUI.showChoiceDialog(torrentData, function(action) {
-                            if (action === 'preload') {
-                                LampaIntegration.handlePreloadChoice(torrentData);
-                            } else if (action === 'watch') {
-                                LampaIntegration.handleWatchChoice(torrentData);
+                    // Временно переопределяем Player.play для перехвата
+                    if (window.Lampa && window.Lampa.Player) {
+                        window.Lampa.Player.play = function(element) {
+                            console.log('[Lampa Integration] Перехвачен Player.play, показываем диалог');
+                            
+                            // Восстанавливаем оригинальную функцию
+                            if (LampaIntegration.originalPlayerPlay) {
+                                window.Lampa.Player.play = LampaIntegration.originalPlayerPlay;
                             }
-                        });
-                        
-                        return false; // Предотвращаем стандартное поведение
+                            
+                            // Показываем диалог выбора
+                            PreloadUI.showChoiceDialog(fileData, function(action) {
+                                if (action === 'preload') {
+                                    LampaIntegration.handlePreloadChoice(fileData);
+                                } else if (action === 'watch') {
+                                    LampaIntegration.handleWatchChoice(fileData, element);
+                                }
+                            });
+                        };
                     }
                 }
             });
@@ -1341,11 +1374,33 @@
         },
 
         // Обработка выбора просмотра
-        handleWatchChoice: function(torrentData) {
-            console.log('[Lampa Integration] Запуск просмотра для:', torrentData.title);
+        handleWatchChoice: function(fileData, element) {
+            console.log('[Lampa Integration] Запуск просмотра для:', fileData.file_title);
             
-            // Запускаем просмотр через стандартный механизм
-            PreloadUI.startWatching(torrentData);
+            if (element && window.Lampa && window.Lampa.Player) {
+                // Используем стандартный механизм Lampa для воспроизведения
+                console.log('[Lampa Integration] Используем стандартный Player Lampa');
+                
+                // Вызываем оригинальную функцию Player.play
+                if (LampaIntegration.originalPlayerPlay) {
+                    LampaIntegration.originalPlayerPlay.call(window.Lampa.Player, element);
+                } else {
+                    // Fallback - прямой вызов
+                    window.Lampa.Player.play(element);
+                }
+                
+                // Настраиваем callback если нужно
+                if (window.Lampa.Player.callback) {
+                    window.Lampa.Player.callback(function() {
+                        if (window.Lampa.Controller) {
+                            window.Lampa.Controller.toggle('modal');
+                        }
+                    });
+                }
+            } else {
+                // Fallback через наш метод
+                PreloadUI.startWatching(fileData);
+            }
         }
     };
 

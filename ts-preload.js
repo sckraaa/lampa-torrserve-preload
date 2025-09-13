@@ -513,6 +513,20 @@
                     
                     ${recommendation ? `
                     <div class="preload-recommendation">
+                        ${recommendation.recommended_percent === 0 ? `
+                        <div class="rec-title no-preload">🚀 Рекомендация AI: Предзагрузка НЕ НУЖНА!</div>
+                        <div class="rec-no-preload">
+                            <div class="rec-item highlight">
+                                <span class="rec-label">🌟 Ваша скорость:</span>
+                                <span class="rec-value">${speedMBps} МБ/с</span>
+                            </div>
+                            <div class="rec-item">
+                                <span class="rec-label">📹 Требуется:</span>
+                                <span class="rec-value">${((recommendation.estimated_speed_bps || 1500000) / (8 * 1024 * 1024)).toFixed(1)} МБ/с</span>
+                            </div>
+                        </div>
+                        <div class="rec-reasoning">${recommendation.reasoning}</div>
+                        ` : `
                         <div class="rec-title">💡 Рекомендация AI:</div>
                         <div class="rec-content">
                             <div class="rec-item">
@@ -533,6 +547,7 @@
                             </div>
                         </div>
                         <div class="rec-reasoning">${recommendation.reasoning}</div>
+                        `}
                     </div>
                     ` : `
                     <div class="preload-loading">
@@ -561,7 +576,12 @@
                     </div>
                     
                     <div class="preload-buttons">
+                        ${recommendation && recommendation.recommended_percent === 0 ? `
+                        <button class="preload-watch-direct-btn">▶️ Смотреть без предзагрузки</button>
+                        <button class="preload-start-btn secondary">📦 Все равно предзагрузить</button>
+                        ` : `
                         <button class="preload-start-btn">🚀 Начать предзагрузку</button>
+                        `}
                         <button class="preload-cancel-btn">❌ Отмена</button>
                     </div>
                 </div>
@@ -699,6 +719,36 @@
                     gap: 15px;
                     justify-content: center;
                 }
+                .rec-no-preload .highlight {
+                    background: rgba(76, 175, 80, 0.1);
+                    border-left: 4px solid #4CAF50;
+                    padding-left: 12px;
+                }
+                .preload-watch-direct-btn {
+                    background: linear-gradient(135deg, #4CAF50, #45a049);
+                    color: white;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+                }
+                .preload-watch-direct-btn:hover {
+                    background: linear-gradient(135deg, #45a049, #388e3c);
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+                }
+                .preload-start-btn.secondary {
+                    background: #555;
+                    font-size: 14px;
+                    padding: 10px 20px;
+                }
+                .preload-start-btn.secondary:hover {
+                    background: #666;
+                }
                 .preload-start-btn, .preload-cancel-btn {
                     padding: 12px 30px;
                     border-radius: 6px;
@@ -757,6 +807,13 @@
                 $(document).off('keydown.preload-setup');
                 dialog.remove();
                 callback('cancel');
+            });
+
+            // Обработчик кнопки "Смотреть без предзагрузки"
+            dialog.find('.preload-watch-direct-btn').on('click', function() {
+                $(document).off('keydown.preload-setup');
+                dialog.remove();
+                callback('watch_direct', null);
             });
 
             // Обработчик ESC и Back кнопок
@@ -1802,6 +1859,13 @@
             TorrServeAPI.getRecommendation(torrentData.magnet, 0, function(error, recommendation) {
                 // Показываем диалог настройки (с рекомендацией или без)
                 PreloadUI.showPreloadSetup(torrentData, recommendation, function(action, options) {
+                    if (action === 'watch_direct') {
+                        // Запускаем просмотр без предзагрузки
+                        console.log('[Lampa Integration] Запуск просмотра без предзагрузки');
+                        PreloadUI.startWatching(torrentData);
+                        return;
+                    }
+                    
                     if (action === 'start') {
                         // Запускаем предзагрузку
                         TorrServeAPI.startPreload(torrentData.magnet, 0, options, function(error, result) {

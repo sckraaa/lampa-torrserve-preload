@@ -198,20 +198,34 @@
 
         // Отменить предзагрузку
         cancelPreload: function(taskId, callback) {
-            // Обновляем адрес TorrServer перед запросом
             Settings.updateTorrServerUrl();
             
-            Lampa.Utils.request({
-                url: Settings.torrserve_host + '/preload/cancel?task_id=' + taskId,
-                method: 'POST',
-                timeout: 5000,
-                success: function(response) {
-                    callback(null, response);
-                },
-                error: function(xhr, status, error) {
-                    callback('Ошибка отмены: ' + error);
-                }
-            });
+            try {
+                fetch(Settings.torrserve_host + '/preload/cancel?task_id=' + taskId, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json'
+                    },
+                    mode: 'cors'
+                })
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                    }
+                    return response.json();
+                })
+                .then(function(result) {
+                    console.log('[TorrServe API] Предзагрузка отменена:', result);
+                    callback(null, result);
+                })
+                .catch(function(error) {
+                    console.error('[TorrServe API] Ошибка отмены предзагрузки:', error);
+                    callback('Ошибка отмены: ' + error.message);
+                });
+            } catch (e) {
+                console.error('[TorrServe API] Ошибка создания запроса отмены:', e);
+                callback('Ошибка создания запроса: ' + e.message);
+            }
         },
 
         // Получить информацию о дисковом пространстве
@@ -734,13 +748,26 @@
                     auto_calculate: Settings.auto_calculate,
                     percent: Settings.default_percent
                 };
+                $(document).off('keydown.preload-setup');
                 dialog.remove();
                 callback('start', options);
             });
             
             dialog.find('.preload-cancel-btn').on('click', function() {
+                $(document).off('keydown.preload-setup');
                 dialog.remove();
                 callback('cancel');
+            });
+
+            // Обработчик ESC и Back кнопок
+            $(document).on('keydown.preload-setup', function(e) {
+                if (e.keyCode === 27 || e.keyCode === 8) { // ESC или Back
+                    e.preventDefault();
+                    dialog.remove();
+                    $(document).off('keydown.preload-setup');
+                    callback('cancel');
+                    return false;
+                }
             });
             
             // Если нет рекомендации, пытаемся её получить
@@ -1025,6 +1052,7 @@
             dialog.find('.preload-watch-btn').on('click', function() {
                 if (!$(this).prop('disabled')) {
                     clearInterval(progressInterval);
+                    $(document).off('keydown.preload-progress');
                     dialog.remove();
                     // Запускаем просмотр через стандартный механизм Lampa
                     PreloadUI.startWatching(torrent);
@@ -1040,7 +1068,25 @@
                     }
                 });
                 clearInterval(progressInterval);
+                $(document).off('keydown.preload-progress');
                 dialog.remove();
+            });
+
+            // Обработчик ESC и Back кнопок для диалога прогресса
+            $(document).on('keydown.preload-progress', function(e) {
+                if (e.keyCode === 27 || e.keyCode === 8) { // ESC или Back
+                    e.preventDefault();
+                    // Отменяем предзагрузку при нажатии назад
+                    TorrServeAPI.cancelPreload(taskId, function(error) {
+                        if (!error) {
+                            Lampa.Noty.show('Предзагрузка отменена', {type: 'success'});
+                        }
+                    });
+                    clearInterval(progressInterval);
+                    dialog.remove();
+                    $(document).off('keydown.preload-progress');
+                    return false;
+                }
             });
             
             // Сохраняем ссылки для внешнего управления
@@ -1157,7 +1203,10 @@
                         // При cancel ничего не делаем
                     },
                     onBack: function() {
-                        // При нажатии назад ничего не делаем
+                        // Закрываем диалог при нажатии назад
+                        if (window.Lampa.Controller) {
+                            window.Lampa.Controller.toggle('modal');
+                        }
                     }
                 });
             } else {
@@ -1498,6 +1547,7 @@
             
             // Обработчики событий настроек
             modal.find('.settings-close').on('click', function() {
+                $(document).off('keydown.smart-preload-settings');
                 modal.remove();
             });
             
@@ -1534,21 +1584,27 @@
                 Lampa.Storage.set('smart_preload_notifications', Settings.show_notifications);
                 
                 Lampa.Noty.show('Настройки сохранены', {type: 'success'});
+                $(document).off('keydown.smart-preload-settings');
                 modal.remove();
             });
             
             modal.find('.test-connection').on('click', function() {
                 var host = modal.find('.torrserve-host').val();
                 
-                Lampa.Utils.request({
-                    url: host + '/echo',
-                    timeout: 5000,
-                    success: function(response) {
+                fetch(host + '/echo', {
+                    method: 'GET',
+                    mode: 'cors',
+                    timeout: 5000
+                })
+                .then(function(response) {
+                    if (response.ok) {
                         Lampa.Noty.show('✅ Соединение с TorrServe установлено!', {type: 'success'});
-                    },
-                    error: function() {
-                        Lampa.Noty.show('❌ Ошибка соединения с TorrServe', {type: 'error'});
+                    } else {
+                        throw new Error('HTTP ' + response.status);
                     }
+                })
+                .catch(function() {
+                    Lampa.Noty.show('❌ Ошибка соединения с TorrServe', {type: 'error'});
                 });
             });
 
@@ -1562,6 +1618,16 @@
             // Обработчик кнопки информации о диске
             modal.find('.disk-info').on('click', function() {
                 PreloadUI.showDiskInfo();
+            });
+
+            // Обработчик ESC и Back кнопок для настроек
+            $(document).on('keydown.smart-preload-settings', function(e) {
+                if (e.keyCode === 27 || e.keyCode === 8) { // ESC или Back
+                    e.preventDefault();
+                    modal.remove();
+                    $(document).off('keydown.smart-preload-settings');
+                    return false;
+                }
             });
         },
 
@@ -1820,3 +1886,4 @@
     console.log('[TorrServe Smart Preload] Плагин загружен');
 
 })();
+

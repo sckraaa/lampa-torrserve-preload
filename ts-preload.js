@@ -212,6 +212,70 @@
                     callback('Ошибка отмены: ' + error);
                 }
             });
+        },
+
+        // Получить информацию о дисковом пространстве
+        getDiskInfo: function(callback) {
+            Settings.updateTorrServerUrl();
+            
+            try {
+                fetch(Settings.torrserve_host + '/preload/disk-info', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    },
+                    mode: 'cors'
+                })
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                    }
+                    return response.json();
+                })
+                .then(function(diskInfo) {
+                    console.log('[TorrServe API] Информация о диске получена:', diskInfo);
+                    callback(null, diskInfo);
+                })
+                .catch(function(error) {
+                    console.error('[TorrServe API] Ошибка получения информации о диске:', error);
+                    callback('Ошибка получения информации о диске: ' + error.message);
+                });
+            } catch (e) {
+                console.error('[TorrServe API] Ошибка создания запроса информации о диске:', e);
+                callback('Ошибка создания запроса: ' + e.message);
+            }
+        },
+
+        // Очистить весь кэш предзагрузки
+        clearAllPreloads: function(callback) {
+            Settings.updateTorrServerUrl();
+            
+            try {
+                fetch(Settings.torrserve_host + '/preload/clear-all', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json'
+                    },
+                    mode: 'cors'
+                })
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                    }
+                    return response.json();
+                })
+                .then(function(result) {
+                    console.log('[TorrServe API] Кэш предзагрузки очищен:', result);
+                    callback(null, result);
+                })
+                .catch(function(error) {
+                    console.error('[TorrServe API] Ошибка очистки кэша:', error);
+                    callback('Ошибка очистки кэша: ' + error.message);
+                });
+            } catch (e) {
+                console.error('[TorrServe API] Ошибка создания запроса очистки:', e);
+                callback('Ошибка создания запроса: ' + e.message);
+            }
         }
     };
 
@@ -1057,6 +1121,98 @@
             Lampa.Player.listener.send('play', {});
         },
 
+        // Показать диалог ошибки нехватки места на диске
+        showDiskSpaceErrorDialog: function(errorMessage) {
+            console.log('[PreloadUI] Показываем диалог ошибки нехватки места:', errorMessage);
+
+            // Используем систему Select от Lampa для совместимости с пультом ДУ
+            if (window.Lampa && window.Lampa.Select) {
+                var items = [
+                    {
+                        title: '🗑️ Очистить кэш предзагрузки',
+                        subtitle: 'Освободить место, удалив все предзагруженные файлы',
+                        value: 'clear_cache'
+                    },
+                    {
+                        title: '📊 Показать информацию о диске',
+                        subtitle: 'Посмотреть сколько места занято и свободно',
+                        value: 'disk_info'
+                    },
+                    {
+                        title: '❌ Отмена',
+                        subtitle: 'Закрыть диалог',
+                        value: 'cancel'
+                    }
+                ];
+
+                window.Lampa.Select.show({
+                    title: '⚠️ Недостаточно места на диске',
+                    items: items,
+                    onSelect: function(item) {
+                        if (item.value === 'clear_cache') {
+                            PreloadUI.clearCacheWithConfirmation();
+                        } else if (item.value === 'disk_info') {
+                            PreloadUI.showDiskInfo();
+                        }
+                        // При cancel ничего не делаем
+                    },
+                    onBack: function() {
+                        // При нажатии назад ничего не делаем
+                    }
+                });
+            } else {
+                // Fallback для старых версий Lampa
+                if (confirm('⚠️ Недостаточно места на диске!\n\n' + errorMessage + '\n\nОчистить кэш предзагрузки?')) {
+                    PreloadUI.clearCacheWithConfirmation();
+                }
+            }
+        },
+
+        // Очистка кэша с подтверждением
+        clearCacheWithConfirmation: function() {
+            TorrServeAPI.clearAllPreloads(function(error, result) {
+                if (error) {
+                    console.error('[PreloadUI] Ошибка очистки кэша:', error);
+                    Lampa.Noty.show('Ошибка очистки кэша: ' + error, {type: 'error'});
+                } else {
+                    console.log('[PreloadUI] Кэш успешно очищен:', result);
+                    Lampa.Noty.show('✅ Кэш предзагрузки очищен', {type: 'success'});
+                    
+                    // Показываем информацию о освобожденном месте
+                    TorrServeAPI.getDiskInfo(function(err, diskInfo) {
+                        if (!err && diskInfo) {
+                            Lampa.Noty.show(
+                                '💾 Свободно: ' + diskInfo.free_formatted + 
+                                ' из ' + diskInfo.total_formatted, 
+                                {type: 'success'}
+                            );
+                        }
+                    });
+                }
+            });
+        },
+
+        // Показать информацию о диске
+        showDiskInfo: function() {
+            TorrServeAPI.getDiskInfo(function(error, diskInfo) {
+                if (error) {
+                    console.error('[PreloadUI] Ошибка получения информации о диске:', error);
+                    Lampa.Noty.show('Ошибка получения информации о диске: ' + error, {type: 'error'});
+                } else {
+                    console.log('[PreloadUI] Информация о диске:', diskInfo);
+                    
+                    var message = '💾 Информация о диске:\n\n' +
+                        '📁 Общий размер: ' + diskInfo.total_formatted + '\n' +
+                        '✅ Свободно: ' + diskInfo.free_formatted + '\n' +
+                        '🗃️ Занято: ' + diskInfo.used_formatted + '\n' +
+                        '📦 Кэш предзагрузки: ' + diskInfo.cache_formatted + '\n\n' +
+                        '📍 Путь: ' + diskInfo.cache_path;
+                    
+                    Lampa.Noty.show(message, {type: 'default', time: 10000});
+                }
+            });
+        },
+
         // Вспомогательные функции форматирования
         getStatusText: function(state) {
             var states = {
@@ -1181,6 +1337,8 @@
                     <div class="settings-footer">
                         <button class="save-settings">💾 Сохранить</button>
                         <button class="test-connection">🔗 Тест соединения</button>
+                        <button class="clear-cache">🗑️ Очистить кэш</button>
+                        <button class="disk-info">💾 Диск</button>
                     </div>
                 </div>
             `;
@@ -1295,13 +1453,14 @@
                     gap: 15px;
                     justify-content: center;
                 }
-                .save-settings, .test-connection {
-                    padding: 10px 20px;
+                .save-settings, .test-connection, .clear-cache, .disk-info {
+                    padding: 10px 15px;
                     border: none;
                     border-radius: 6px;
-                    font-size: 14px;
+                    font-size: 12px;
                     cursor: pointer;
                     transition: background 0.3s;
+                    margin: 0 5px;
                 }
                 .save-settings {
                     background: #4CAF50;
@@ -1316,6 +1475,20 @@
                 }
                 .test-connection:hover {
                     background: #1976D2;
+                }
+                .clear-cache {
+                    background: #ff6b35;
+                    color: white;
+                }
+                .clear-cache:hover {
+                    background: #e55a2b;
+                }
+                .disk-info {
+                    background: #9C27B0;
+                    color: white;
+                }
+                .disk-info:hover {
+                    background: #7B1FA2;
                 }
                 </style>
             `;
@@ -1377,6 +1550,18 @@
                         Lampa.Noty.show('❌ Ошибка соединения с TorrServe', {type: 'error'});
                     }
                 });
+            });
+
+            // Обработчик кнопки очистки кэша
+            modal.find('.clear-cache').on('click', function() {
+                if (confirm('⚠️ Вы уверены, что хотите очистить весь кэш предзагрузки?\\n\\nЭто освободит место на диске, но удалит все предзагруженные файлы.')) {
+                    PreloadUI.clearCacheWithConfirmation();
+                }
+            });
+
+            // Обработчик кнопки информации о диске
+            modal.find('.disk-info').on('click', function() {
+                PreloadUI.showDiskInfo();
             });
         },
 
@@ -1556,7 +1741,16 @@
                         TorrServeAPI.startPreload(torrentData.magnet, 0, options, function(error, result) {
                             if (error) {
                                 console.error('[Lampa Integration] Ошибка запуска предзагрузки:', error);
-                                Lampa.Noty.show('Ошибка запуска предзагрузки: ' + error, {type: 'error'});
+                                
+                                // Проверяем, связана ли ошибка с нехваткой места на диске
+                                if (error.toLowerCase().indexOf('insufficient disk space') !== -1 || 
+                                    error.toLowerCase().indexOf('недостаточно места') !== -1) {
+                                    
+                                    // Показываем диалог с предложением очистить кэш
+                                    PreloadUI.showDiskSpaceErrorDialog(error);
+                                } else {
+                                    Lampa.Noty.show('Ошибка запуска предзагрузки: ' + error, {type: 'error'});
+                                }
                             } else {
                                 console.log('[Lampa Integration] Предзагрузка запущена, результат:', result);
                                 console.log('[Lampa Integration] task_id:', result ? result.task_id : 'ОТСУТСТВУЕТ');

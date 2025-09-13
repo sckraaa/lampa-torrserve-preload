@@ -1002,6 +1002,8 @@
 
     // Интеграция с Lampa
     var LampaIntegration = {
+        originalPlayerPlay: null,
+        currentTorrentData: null, // Глобальная переменная для данных торрента
         
         // Инициализация плагина
         init: function() {
@@ -1255,9 +1257,6 @@
         if (window.Lampa && window.Lampa.Listener) {
             console.log('[Lampa Integration] Подключаемся к событиям Lampa');
             
-            // Сохраняем ссылку на торрент при его выборе
-            var currentTorrentData = null;
-            
             // Сохраняем оригинальную функцию Player.play СРАЗУ при инициализации
             if (window.Lampa && window.Lampa.Player && window.Lampa.Player.play) {
                 LampaIntegration.originalPlayerPlay = window.Lampa.Player.play;
@@ -1267,11 +1266,11 @@
                     console.log('[Lampa Integration] Перехвачен Player.play');
                     
                     // Если есть активные данные торрента, показываем диалог
-                    if (currentTorrentData && element && element.url) {
+                    if (LampaIntegration.currentTorrentData && element && element.url) {
                         console.log('[Lampa Integration] Показываем диалог выбора');
                         
                         var fileData = {
-                            ...currentTorrentData,
+                            ...LampaIntegration.currentTorrentData,
                             file_url: element.url,
                             file_title: element.title,
                             file_size: element.size || null,
@@ -1303,7 +1302,7 @@
                 if (e.type === 'onenter') {
                     console.log('[Lampa Integration] Сохраняем данные торрента:', e.element);
                     // Всегда обновляем данные торрента при выборе нового
-                    currentTorrentData = LampaIntegration.extractTorrentDataFromElement(e.element);
+                    LampaIntegration.currentTorrentData = LampaIntegration.extractTorrentDataFromElement(e.element);
                 }
             });
             
@@ -1311,10 +1310,10 @@
             window.Lampa.Listener.follow('activity', function(e) {
                 if (e.type === 'start' && e.component !== 'torrents') {
                     console.log('[Lampa Integration] Очищаем данные торрента при смене активности на:', e.component);
-                    currentTorrentData = null;
+                    LampaIntegration.currentTorrentData = null;
                 } else if (e.type === 'back' || e.type === 'destroy') {
                     console.log('[Lampa Integration] Очищаем данные торрента при возврате/закрытии');
-                    currentTorrentData = null;
+                    LampaIntegration.currentTorrentData = null;
                 }
             });
             
@@ -1323,7 +1322,7 @@
                 var originalModalClose = window.Lampa.Modal.close;
                 window.Lampa.Modal.close = function() {
                     console.log('[Lampa Integration] Модальное окно закрывается, очищаем данные торрента');
-                    currentTorrentData = null;
+                    LampaIntegration.currentTorrentData = null;
                     if (originalModalClose) {
                         originalModalClose.apply(this, arguments);
                     }

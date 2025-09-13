@@ -1263,7 +1263,8 @@
                 
                 // Переопределяем Player.play НАВСЕГДА для перехвата всех вызовов
                 window.Lampa.Player.play = function(element) {
-                    console.log('[Lampa Integration] Перехвачен Player.play');
+                    console.log('[Lampa Integration] Перехвачен Player.play, данные торрента:', LampaIntegration.currentTorrentData);
+                    console.log('[Lampa Integration] Element:', element);
                     
                     // Если есть активные данные торрента, показываем диалог
                     if (LampaIntegration.currentTorrentData && element && element.url) {
@@ -1306,28 +1307,18 @@
                 }
             });
             
-            // Очищаем данные торрента при выходе из секции торрентов или возврате назад
+            // Очищаем данные торрента только при реальной смене компонента (не при возврате из плеера)
             window.Lampa.Listener.follow('activity', function(e) {
-                if (e.type === 'start' && e.component !== 'torrents') {
+                if (e.type === 'start' && e.component !== 'torrents' && e.component !== 'player') {
                     console.log('[Lampa Integration] Очищаем данные торрента при смене активности на:', e.component);
                     LampaIntegration.currentTorrentData = null;
-                } else if (e.type === 'back' || e.type === 'destroy') {
-                    console.log('[Lampa Integration] Очищаем данные торрента при возврате/закрытии');
+                } else if (e.type === 'destroy' && e.component === 'torrents') {
+                    console.log('[Lampa Integration] Очищаем данные торрента при закрытии секции торрентов');
                     LampaIntegration.currentTorrentData = null;
                 }
             });
             
-            // Дополнительно отслеживаем события модальных окон для очистки
-            if (window.Lampa && window.Lampa.Modal) {
-                var originalModalClose = window.Lampa.Modal.close;
-                window.Lampa.Modal.close = function() {
-                    console.log('[Lampa Integration] Модальное окно закрывается, очищаем данные торрента');
-                    LampaIntegration.currentTorrentData = null;
-                    if (originalModalClose) {
-                        originalModalClose.apply(this, arguments);
-                    }
-                };
-            }
+            // НЕ очищаем данные при закрытии модальных окон, так как это мешает работе при возврате из плеера
         } else {
             console.warn('[Lampa Integration] Lampa.Listener недоступен, пытаемся перехватить клики');
             

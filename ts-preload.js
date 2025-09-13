@@ -1257,7 +1257,6 @@
             
             // Сохраняем ссылку на торрент при его выборе
             var currentTorrentData = null;
-            var isFromTorrentSection = false;
             
             // Сохраняем оригинальную функцию Player.play СРАЗУ при инициализации
             if (window.Lampa && window.Lampa.Player && window.Lampa.Player.play) {
@@ -1265,15 +1264,14 @@
                 
                 // Переопределяем Player.play НАВСЕГДА для перехвата всех вызовов
                 window.Lampa.Player.play = function(element) {
-                    console.log('[Lampa Integration] Перехвачен Player.play, isFromTorrentSection:', isFromTorrentSection);
+                    console.log('[Lampa Integration] Перехвачен Player.play');
                     
-                    // Показываем диалог только если мы в контексте торрентов И есть URL файла
-                    if (isFromTorrentSection && element && element.url && element.url.indexOf('torrserver') > -1) {
-                        console.log('[Lampa Integration] Показываем диалог выбора для торрент-файла');
+                    // Если есть активные данные торрента, показываем диалог
+                    if (currentTorrentData && element && element.url) {
+                        console.log('[Lampa Integration] Показываем диалог выбора');
                         
                         var fileData = {
-                            title: currentTorrentData ? currentTorrentData.title : 'Торрент',
-                            magnet: currentTorrentData ? currentTorrentData.magnet : '',
+                            ...currentTorrentData,
                             file_url: element.url,
                             file_title: element.title,
                             file_size: element.size || null,
@@ -1289,9 +1287,11 @@
                                 LampaIntegration.handleWatchChoice(fileData, element);
                             }
                         });
+                        
+                        // НЕ сбрасываем данные торрента здесь, чтобы повторные клики работали
                     } else {
-                        // Если не торрент или нет контекста, используем стандартное поведение
-                        console.log('[Lampa Integration] Стандартное воспроизведение');
+                        // Если нет активных данных, используем стандартное поведение
+                        console.log('[Lampa Integration] Стандартное воспроизведение (нет данных торрента)');
                         if (LampaIntegration.originalPlayerPlay) {
                             LampaIntegration.originalPlayerPlay.call(this, element);
                         }
@@ -1302,34 +1302,33 @@
             window.Lampa.Listener.follow('torrent', function(e) {
                 if (e.type === 'onenter') {
                     console.log('[Lampa Integration] Сохраняем данные торрента:', e.element);
+                    // Всегда обновляем данные торрента при выборе нового
                     currentTorrentData = LampaIntegration.extractTorrentDataFromElement(e.element);
-                    isFromTorrentSection = true; // Устанавливаем флаг что мы в контексте торрентов
                 }
             });
             
-            // Отслеживаем смену активности для управления контекстом
+            // Очищаем данные торрента при выходе из секции торрентов или возврате назад
             window.Lampa.Listener.follow('activity', function(e) {
-                if (e.type === 'start') {
-                    console.log('[Lampa Integration] Активность изменена на:', e.component);
-                    
-                    if (e.component === 'torrents') {
-                        isFromTorrentSection = true;
-                        console.log('[Lampa Integration] Вошли в секцию торрентов');
-                    } else {
-                        isFromTorrentSection = false;
-                        currentTorrentData = null;
-                        console.log('[Lampa Integration] Вышли из секции торрентов');
-                    }
+                if (e.type === 'start' && e.component !== 'torrents') {
+                    console.log('[Lampa Integration] Очищаем данные торрента при смене активности на:', e.component);
+                    currentTorrentData = null;
+                } else if (e.type === 'back' || e.type === 'destroy') {
+                    console.log('[Lampa Integration] Очищаем данные торрента при возврате/закрытии');
+                    currentTorrentData = null;
                 }
             });
             
-            // Дополнительно отслеживаем события торрент-файлов
-            window.Lampa.Listener.follow('torrent_file', function(e) {
-                if (e.type === 'onfocus' || e.type === 'onenter') {
-                    console.log('[Lampa Integration] Событие торрент-файла:', e.type);
-                    isFromTorrentSection = true; // Подтверждаем что мы работаем с торрент-файлами
-                }
-            });
+            // Дополнительно отслеживаем события модальных окон для очистки
+            if (window.Lampa && window.Lampa.Modal) {
+                var originalModalClose = window.Lampa.Modal.close;
+                window.Lampa.Modal.close = function() {
+                    console.log('[Lampa Integration] Модальное окно закрывается, очищаем данные торрента');
+                    currentTorrentData = null;
+                    if (originalModalClose) {
+                        originalModalClose.apply(this, arguments);
+                    }
+                };
+            }
         } else {
             console.warn('[Lampa Integration] Lampa.Listener недоступен, пытаемся перехватить клики');
             

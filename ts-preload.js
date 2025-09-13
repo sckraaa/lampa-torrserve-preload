@@ -22,18 +22,36 @@
         // Автоматическое определение адреса TorrServer из настроек Lampa
         getTorrServerUrl: function() {
             try {
-                // Проверяем сохраненные настройки плагина
-                var savedHost = Lampa.Storage.get('torrserver_host', '');
-                if (savedHost) {
-                    console.log('[Settings] Используем сохраненный адрес:', savedHost);
-                    return savedHost;
+                // Используем ту же логику что и в оригинальном Lampa (torserver.js)
+                var torrserverUrl = Lampa.Storage.get('torrserver_url', '');
+                var torrserverUrlTwo = Lampa.Storage.get('torrserver_url_two', '');
+                var useLink = Lampa.Storage.get('torrserver_use_link', 'one');
+                
+                // Выбираем адрес в зависимости от настройки torrserver_use_link
+                var selectedUrl = '';
+                if (useLink === 'two') {
+                    selectedUrl = torrserverUrlTwo || torrserverUrl;
+                } else {
+                    selectedUrl = torrserverUrl || torrserverUrlTwo;
                 }
                 
-                // Пытаемся найти адрес TorrServer в настройках Lampa для торрент провайдеров
-                var torrUrl = Lampa.Storage.get('torr_url', '');
-                if (torrUrl && torrUrl !== 'http://127.0.0.1:8090') {
-                    console.log('[Settings] Найден адрес TorrServer в настройках Lampa:', torrUrl);
-                    return torrUrl;
+                if (selectedUrl) {
+                    // Проверяем и исправляем URL как в оригинальном Lampa
+                    if (selectedUrl && !selectedUrl.startsWith('http')) {
+                        selectedUrl = 'http://' + selectedUrl;
+                    }
+                    if (selectedUrl && !selectedUrl.includes(':8090') && !selectedUrl.includes(':')) {
+                        selectedUrl = selectedUrl + ':8090';
+                    }
+                    console.log('[Settings] Используем адрес TorrServer из настроек Lampa:', selectedUrl);
+                    return selectedUrl;
+                }
+                
+                // Fallback: проверяем сохраненные настройки плагина
+                var savedHost = Lampa.Storage.get('torrserver_host', '');
+                if (savedHost) {
+                    console.log('[Settings] Используем сохраненный адрес плагина:', savedHost);
+                    return savedHost;
                 }
                 
                 // Возвращаем дефолтный адрес

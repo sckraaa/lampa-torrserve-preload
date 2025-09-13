@@ -64,37 +64,52 @@
             // Обновляем адрес TorrServer перед запросом
             Settings.updateTorrServerUrl();
             
-            console.log('[TorrServe API] Запрос рекомендации для:', magnet.substring(0, 50) + '...');
+            console.log('[TorrServe API] Запрос рекомендации для:', magnet ? magnet.substring(0, 80) + '...' : 'NULL');
             console.log('[TorrServe API] Используем адрес:', Settings.torrserve_host);
+            console.log('[TorrServe API] fileIndex:', fileIndex);
+            
+            if (!magnet || !magnet.startsWith('magnet:')) {
+                callback('Неверная магнет-ссылка: ' + magnet);
+                return;
+            }
             
             var data = {
                 magnet: magnet,
                 file_index: fileIndex || 0,
                 auto_calculate: true
             };
+            
+            console.log('[TorrServe API] Отправляем данные:', JSON.stringify(data));
 
-            Lampa.Utils.request({
-                url: Settings.torrserve_host + '/preload/recommend',
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                data: JSON.stringify(data),
-                timeout: 15000,
-                success: function(response) {
-                    console.log('[TorrServe API] Рекомендация получена:', response);
-                    try {
-                        var recommendation = typeof response === 'string' ? JSON.parse(response) : response;
-                        callback(null, recommendation);
-                    } catch (e) {
-                        callback('Ошибка парсинга ответа: ' + e.message);
+            // Используем стандартный fetch для лучшей совместимости
+            try {
+                fetch(Settings.torrserve_host + '/preload/recommend', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(data),
+                    mode: 'cors'
+                })
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
                     }
-                },
-                error: function(xhr, status, error) {
+                    return response.json();
+                })
+                .then(function(recommendation) {
+                    console.log('[TorrServe API] Рекомендация получена:', recommendation);
+                    callback(null, recommendation);
+                })
+                .catch(function(error) {
                     console.error('[TorrServe API] Ошибка получения рекомендации:', error);
-                    callback('Ошибка связи с TorrServe: ' + error);
-                }
-            });
+                    callback('Ошибка связи с TorrServe: ' + error.message);
+                });
+            } catch (e) {
+                console.error('[TorrServe API] Ошибка создания запроса:', e);
+                callback('Ошибка создания запроса: ' + e.message);
+            }
         },
 
         // Запустить предзагрузку
@@ -113,28 +128,35 @@
                 priority: 5
             };
 
-            Lampa.Utils.request({
-                url: Settings.torrserve_host + '/preload',
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                data: JSON.stringify(data),
-                timeout: 10000,
-                success: function(response) {
-                    console.log('[TorrServe API] Предзагрузка запущена:', response);
-                    try {
-                        var result = typeof response === 'string' ? JSON.parse(response) : response;
-                        callback(null, result);
-                    } catch (e) {
-                        callback('Ошибка парсинга ответа: ' + e.message);
+            // Используем стандартный fetch для лучшей совместимости
+            try {
+                fetch(Settings.torrserve_host + '/preload', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(data),
+                    mode: 'cors'
+                })
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
                     }
-                },
-                error: function(xhr, status, error) {
+                    return response.json();
+                })
+                .then(function(result) {
+                    console.log('[TorrServe API] Предзагрузка запущена:', result);
+                    callback(null, result);
+                })
+                .catch(function(error) {
                     console.error('[TorrServe API] Ошибка запуска предзагрузки:', error);
-                    callback('Ошибка связи с TorrServe: ' + error);
-                }
-            });
+                    callback('Ошибка связи с TorrServe: ' + error.message);
+                });
+            } catch (e) {
+                console.error('[TorrServe API] Ошибка создания запроса:', e);
+                callback('Ошибка создания запроса: ' + e.message);
+            }
         },
 
         // Получить статус предзагрузки

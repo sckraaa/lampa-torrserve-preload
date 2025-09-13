@@ -11,13 +11,49 @@
 
     console.log('[TorrServe Smart Preload] Загрузка плагина v' + plugin_info.version);
 
-    // Настройки плагина
+    // Настройки плагина с автоматическим определением адреса TorrServer
     var Settings = {
-        torrserve_host: Lampa.Storage.get('torrserver_host', 'http://192.168.1.100:8090'),
+        torrserve_host: 'http://192.168.3.41:8090', // Ваш адрес по умолчанию
         auto_calculate: Lampa.Storage.get('smart_preload_auto', true),
         default_percent: Lampa.Storage.get('smart_preload_percent', 50),
         preload_timeout: Lampa.Storage.get('smart_preload_timeout', 30), // минут
-        show_notifications: Lampa.Storage.get('smart_preload_notifications', true)
+        show_notifications: Lampa.Storage.get('smart_preload_notifications', true),
+        
+        // Автоматическое определение адреса TorrServer из настроек Lampa
+        getTorrServerUrl: function() {
+            try {
+                // Проверяем сохраненные настройки плагина
+                var savedHost = Lampa.Storage.get('torrserver_host', '');
+                if (savedHost) {
+                    console.log('[Settings] Используем сохраненный адрес:', savedHost);
+                    return savedHost;
+                }
+                
+                // Пытаемся найти адрес TorrServer в настройках Lampa для торрент провайдеров
+                var torrUrl = Lampa.Storage.get('torr_url', '');
+                if (torrUrl && torrUrl !== 'http://127.0.0.1:8090') {
+                    console.log('[Settings] Найден адрес TorrServer в настройках Lampa:', torrUrl);
+                    return torrUrl;
+                }
+                
+                // Возвращаем дефолтный адрес
+                console.log('[Settings] Используем дефолтный адрес TorrServer:', this.torrserve_host);
+                return this.torrserve_host;
+                
+            } catch (e) {
+                console.warn('[Settings] Ошибка получения адреса TorrServer:', e);
+                return this.torrserve_host;
+            }
+        },
+        
+        // Обновить адрес TorrServer
+        updateTorrServerUrl: function() {
+            var newUrl = this.getTorrServerUrl();
+            if (newUrl !== this.torrserve_host) {
+                console.log('[Settings] Обновляем адрес TorrServer с', this.torrserve_host, 'на', newUrl);
+                this.torrserve_host = newUrl;
+            }
+        }
     };
 
     // API для работы с TorrServe
@@ -25,7 +61,11 @@
         
         // Получить рекомендацию по предзагрузке
         getRecommendation: function(magnet, fileIndex, callback) {
+            // Обновляем адрес TorrServer перед запросом
+            Settings.updateTorrServerUrl();
+            
             console.log('[TorrServe API] Запрос рекомендации для:', magnet.substring(0, 50) + '...');
+            console.log('[TorrServe API] Используем адрес:', Settings.torrserve_host);
             
             var data = {
                 magnet: magnet,
@@ -59,7 +99,11 @@
 
         // Запустить предзагрузку
         startPreload: function(magnet, fileIndex, options, callback) {
+            // Обновляем адрес TorrServer перед запросом
+            Settings.updateTorrServerUrl();
+            
             console.log('[TorrServe API] Запуск предзагрузки для:', magnet.substring(0, 50) + '...');
+            console.log('[TorrServe API] Используем адрес:', Settings.torrserve_host);
             
             var data = {
                 magnet: magnet,
@@ -95,6 +139,9 @@
 
         // Получить статус предзагрузки
         getPreloadStatus: function(taskId, callback) {
+            // Обновляем адрес TorrServer перед запросом
+            Settings.updateTorrServerUrl();
+            
             Lampa.Utils.request({
                 url: Settings.torrserve_host + '/preload/status?task_id=' + taskId,
                 method: 'GET',
@@ -115,6 +162,9 @@
 
         // Отменить предзагрузку
         cancelPreload: function(taskId, callback) {
+            // Обновляем адрес TorrServer перед запросом
+            Settings.updateTorrServerUrl();
+            
             Lampa.Utils.request({
                 url: Settings.torrserve_host + '/preload/cancel?task_id=' + taskId,
                 method: 'POST',
@@ -1052,8 +1102,11 @@
                     <div class="settings-content">
                         <div class="setting-item">
                             <label>🌐 Адрес TorrServe:</label>
-                            <input type="text" class="torrserve-host" value="${Settings.torrserve_host}" 
-                                   placeholder="http://192.168.1.100:8090">
+                            <div class="input-group">
+                                <input type="text" class="torrserve-host" value="${Settings.torrserve_host}" 
+                                       placeholder="http://192.168.3.41:8090">
+                                <button class="auto-detect-btn">🔍 Автоопределение</button>
+                            </div>
                         </div>
                         
                         <div class="setting-item">
@@ -1147,6 +1200,29 @@
                     margin-bottom: 8px;
                     font-weight: bold;
                 }
+                .input-group {
+                    display: flex;
+                    gap: 10px;
+                    align-items: center;
+                }
+                .input-group input[type="text"] {
+                    flex: 1;
+                }
+                .auto-detect-btn {
+                    padding: 10px 15px;
+                    border: 1px solid #ff6b35;
+                    border-radius: 6px;
+                    background: transparent;
+                    color: #ff6b35;
+                    font-size: 12px;
+                    cursor: pointer;
+                    transition: all 0.3s;
+                    white-space: nowrap;
+                }
+                .auto-detect-btn:hover {
+                    background: #ff6b35;
+                    color: white;
+                }
                 .setting-item input[type="text"], 
                 .setting-item input[type="number"] {
                     width: 100%;
@@ -1214,6 +1290,18 @@
             modal.find('.default-percent').on('input', function() {
                 var value = $(this).val();
                 modal.find('.percent-display').text(value + '%');
+            });
+            
+            // Обработчик кнопки автоопределения
+            modal.find('.auto-detect-btn').on('click', function() {
+                var detectedUrl = Settings.getTorrServerUrl();
+                modal.find('.torrserve-host').val(detectedUrl);
+                
+                if (detectedUrl !== Settings.torrserve_host) {
+                    Lampa.Noty.show('🔍 Найден адрес: ' + detectedUrl, {type: 'success'});
+                } else {
+                    Lampa.Noty.show('ℹ️ Используется адрес по умолчанию', {type: 'default'});
+                }
             });
             
             modal.find('.save-settings').on('click', function() {

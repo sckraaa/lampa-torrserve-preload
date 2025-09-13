@@ -164,22 +164,36 @@
             // Обновляем адрес TorrServer перед запросом
             Settings.updateTorrServerUrl();
             
-            Lampa.Utils.request({
-                url: Settings.torrserve_host + '/preload/status?task_id=' + taskId,
-                method: 'GET',
-                timeout: 5000,
-                success: function(response) {
-                    try {
-                        var status = typeof response === 'string' ? JSON.parse(response) : response;
-                        callback(null, status);
-                    } catch (e) {
-                        callback('Ошибка парсинга статуса: ' + e.message);
+            var statusUrl = Settings.torrserve_host + '/preload/status?task_id=' + taskId;
+            console.log('[TorrServe API] Запрашиваем статус по URL:', statusUrl);
+            
+            try {
+                fetch(statusUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    },
+                    mode: 'cors'
+                })
+                .then(function(response) {
+                    console.log('[TorrServe API] Ответ сервера статуса:', response.status, response.statusText);
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
                     }
-                },
-                error: function(xhr, status, error) {
-                    callback('Ошибка получения статуса: ' + error);
-                }
-            });
+                    return response.json();
+                })
+                .then(function(status) {
+                    console.log('[TorrServe API] Статус предзагрузки получен:', status);
+                    callback(null, status);
+                })
+                .catch(function(error) {
+                    console.error('[TorrServe API] Ошибка получения статуса:', error);
+                    callback('Ошибка получения статуса: ' + error.message);
+                });
+            } catch (e) {
+                console.error('[TorrServe API] Ошибка создания запроса статуса:', e);
+                callback('Ошибка создания запроса статуса: ' + e.message);
+            }
         },
 
         // Отменить предзагрузку
@@ -922,17 +936,22 @@
             $('body').append(dialog);
             
             // Запуск мониторинга прогресса
+            console.log('[PreloadUI] Запускаем мониторинг для taskId:', taskId);
             var progressInterval = setInterval(function() {
+                console.log('[PreloadUI] Запрашиваем статус для taskId:', taskId);
                 TorrServeAPI.getPreloadStatus(taskId, function(error, status) {
                     if (error) {
                         console.error('[PreloadUI] Ошибка получения статуса:', error);
+                        dialog.find('.status-text').text('Ошибка: ' + error).addClass('status-error');
                         return;
                     }
                     
+                    console.log('[PreloadUI] Получен статус:', status);
                     PreloadUI.updateProgressDialog(dialog, status);
                     
                     // Если задача завершена или ошибка, останавливаем мониторинг
                     if (status.state === 'completed' || status.state === 'error' || status.state === 'cancelled') {
+                        console.log('[PreloadUI] Останавливаем мониторинг, финальное состояние:', status.state);
                         clearInterval(progressInterval);
                     }
                 });
@@ -1536,12 +1555,21 @@
                         // Запускаем предзагрузку
                         TorrServeAPI.startPreload(torrentData.magnet, 0, options, function(error, result) {
                             if (error) {
+                                console.error('[Lampa Integration] Ошибка запуска предзагрузки:', error);
                                 Lampa.Noty.show('Ошибка запуска предзагрузки: ' + error, {type: 'error'});
                             } else {
-                                Lampa.Noty.show('Предзагрузка запущена!', {type: 'success'});
+                                console.log('[Lampa Integration] Предзагрузка запущена, результат:', result);
+                                console.log('[Lampa Integration] task_id:', result ? result.task_id : 'ОТСУТСТВУЕТ');
                                 
-                                // Показываем экран прогресса
-                                PreloadUI.showPreloadProgress(torrentData, result.task_id);
+                                if (result && result.task_id) {
+                                    Lampa.Noty.show('Предзагрузка запущена!', {type: 'success'});
+                                    
+                                    // Показываем экран прогресса
+                                    PreloadUI.showPreloadProgress(torrentData, result.task_id);
+                                } else {
+                                    console.error('[Lampa Integration] Сервер не вернул task_id');
+                                    Lampa.Noty.show('Ошибка: сервер не вернул ID задачи', {type: 'error'});
+                                }
                             }
                         });
                     }
